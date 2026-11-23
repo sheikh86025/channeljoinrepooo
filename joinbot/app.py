@@ -49,25 +49,23 @@ async def amain() -> None:
     cfg = load_config()
     database = D.Database(cfg.db_path)
 
-    # Prefer a StringSession when a valid one is configured. Hosting panels can
-    # accidentally contain placeholders or literal quote characters.
+    # SESSION_STRING is preferred on hosted (non-interactive) deployments.
+    # Strip accidental wrapping quotes sometimes pasted into hosting dashboards.
     raw_session_string = (cfg.session_string or "").strip()
-    if raw_session_string in ('""', "''", "null", "None", "YOUR_SESSION_STRING", "your_session_string_here"):
-        raw_session_string = ""
+    if len(raw_session_string) >= 2 and raw_session_string[0] == raw_session_string[-1] and raw_session_string[0] in ('"', "'"):
+        raw_session_string = raw_session_string[1:-1].strip()
 
     if raw_session_string:
         try:
             session = StringSession(raw_session_string)
-        except (TypeError, ValueError):
-            log.warning(
-                "SESSION_STRING is not a valid Telethon StringSession; "
-                "falling back to SESSION_NAME=%r. Remove SESSION_STRING from "
-                "your hosting variables or provide a freshly generated StringSession.",
-                cfg.session,
-            )
-            session = cfg.session
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                "SESSION_STRING is not a valid Telethon StringSession. "
+                "Generate a fresh StringSession and paste its value without extra quotes."
+            ) from exc
     else:
         session = cfg.session
+
     client = TelegramClient(
         session,
         cfg.api_id,
@@ -77,7 +75,25 @@ async def amain() -> None:
         retry_delay=2,
         auto_reconnect=True,
     )
-    await client.start(phone=cfg.phone or (lambda: input("Phone number (with country code): ")))
+
+    # Connect first and verify authorization. Calling client.start() unconditionally
+    # can invoke input() on a server and crash with EOFError.
+    await client.connect()
+    if not await client.is_user_authorized():
+        if raw_session_string:
+            raise RuntimeError(
+                "SESSION_STRING was parsed but is not authorized for a Telegram account. "
+                "Generate a new authenticated Telethon StringSession; do not use an API hash "
+                "or bot token in SESSION_STRING."
+            )
+        if not __import__("sys").stdin.isatty():
+            raise RuntimeError(
+                "No authorized Telegram session found. Set a valid authenticated "
+                "SESSION_STRING, or run once in an interactive terminal to log in "
+                "and persist the SESSION_NAME session file."
+            )
+        phone = (cfg.phone or input("Phone number (with country code): ")).strip()
+        await client.start(phone=phone)
     me = await client.get_me()
     log.info("Logged in as %s (id=%s)", me.username or me.first_name, me.id)
 

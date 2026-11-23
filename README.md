@@ -71,14 +71,15 @@ requirements.txt  .env.example  README.md
 Tests: `python -m unittest discover -s tests -v`
 
 
-## Session configuration and startup fix
+## Hosted deployment: SESSION_STRING / EOFError
 
-- Set `SESSION_NAME=joiner_session` and leave `SESSION_STRING` empty to use a
-  normal Telethon session file. Keep that file on persistent storage between
-  deployments/restarts.
-- If `SESSION_STRING` is present but is not a valid Telethon StringSession,
-  the app now logs a warning and falls back to `SESSION_NAME` instead of
-  crashing with `ValueError: Not a valid string`.
-- For a headless deployment, provide a genuine Telethon StringSession in
-  `SESSION_STRING`; do not use a placeholder or extra quote characters in
-  the hosting dashboard.
+For a hosted server without an interactive terminal, set `SESSION_STRING` to a
+**genuine authenticated Telethon StringSession**. Paste only the session value
+(no surrounding quote characters); never share it publicly. The app connects
+and checks authorization before starting. It will not call `input()` on a
+non-interactive server.
+
+If the StringSession is malformed, the app reports that directly. If it parses
+but is not authorized, generate a fresh authenticated StringSession. If
+`SESSION_STRING` is empty, an already-authorized `SESSION_NAME` session file
+can be used, provided it is stored on persistent storage.
