@@ -49,7 +49,25 @@ async def amain() -> None:
     cfg = load_config()
     database = D.Database(cfg.db_path)
 
-    session = StringSession(cfg.session_string) if cfg.session_string else cfg.session
+    # Prefer a StringSession when a valid one is configured. Hosting panels can
+    # accidentally contain placeholders or literal quote characters.
+    raw_session_string = (cfg.session_string or "").strip()
+    if raw_session_string in ('""', "''", "null", "None", "YOUR_SESSION_STRING", "your_session_string_here"):
+        raw_session_string = ""
+
+    if raw_session_string:
+        try:
+            session = StringSession(raw_session_string)
+        except (TypeError, ValueError):
+            log.warning(
+                "SESSION_STRING is not a valid Telethon StringSession; "
+                "falling back to SESSION_NAME=%r. Remove SESSION_STRING from "
+                "your hosting variables or provide a freshly generated StringSession.",
+                cfg.session,
+            )
+            session = cfg.session
+    else:
+        session = cfg.session
     client = TelegramClient(
         session,
         cfg.api_id,

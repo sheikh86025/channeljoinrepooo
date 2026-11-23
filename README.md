@@ -69,3 +69,16 @@ requirements.txt  .env.example  README.md
 ```
 
 Tests: `python -m unittest discover -s tests -v`
+
+
+## Session configuration and startup fix
+
+- Set `SESSION_NAME=joiner_session` and leave `SESSION_STRING` empty to use a
+  normal Telethon session file. Keep that file on persistent storage between
+  deployments/restarts.
+- If `SESSION_STRING` is present but is not a valid Telethon StringSession,
+  the app now logs a warning and falls back to `SESSION_NAME` instead of
+  crashing with `ValueError: Not a valid string`.
+- For a headless deployment, provide a genuine Telethon StringSession in
+  `SESSION_STRING`; do not use a placeholder or extra quote characters in
+  the hosting dashboard.
