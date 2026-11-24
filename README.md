@@ -1,33 +1,29 @@
-# Channel Joiner Userbot
+# Channel Joiner (Control Bot + Userbot)
 
-Aap Saved Messages me links bhejo (text ya .txt file) → userbot ek-ek karke sab join karta hai,
-tab tak jab tak queue khatam na ho. Jo join na ho uska notification Saved Messages me aata hai.
+Bot me links bhejo → aapka account ek-ek karke sab join karta hai, jab tak queue khatam na ho.
+Status, pause/resume, failed list sab bot chat me.
 
 ## Setup (Railway)
-1. https://my.telegram.org se `API_ID` aur `API_HASH` lo.
-2. Apne PC pe: `pip install telethon` → `python gen_session.py` → phone/OTP daalo → `SESSION_STRING` copy karo.
-   (Ye string account ka full access hai, kisi ko mat dena.)
-3. GitHub pe push karo → Railway me deploy.
-4. Railway Variables: `API_ID`, `API_HASH`, `SESSION_STRING`.
-5. (Recommended) Railway Volume banao, mount path `/data`, aur variable `DB_PATH=/data/joiner.db`
-   taaki redeploy ke baad queue/history na jaye.
+1. my.telegram.org se `API_ID`, `API_HASH`. @BotFather se bot banao → `BOT_TOKEN`.
+2. Railway Variables: `API_ID`, `API_HASH`, `BOT_TOKEN`. Volume `/data` mount karo + `DB_PATH=/data/joiner.db`.
+3. Deploy. Apne bot ko Telegram me `/start` bhejo (pehla user = owner).
+4. Bot me `/login` → phone number → OTP (**dashes ke saath: 1-2-3-4-5**) → 2FA password (agar ho).
+   Session string banana nahi padta. (Purana tareeka chahiye to `SESSION_STRING` variable bhi chalta hai.)
+5. Links bhejo (text ya .txt file).
 
-## Use
-Saved Messages me links paste karo ya .txt file bhejo. Commands:
-`/status` `/pause` `/resume` `/failed` `/retry` `/delay 3 6` `/clear` `/help`
+## Features
+- Ek-ek karke join, queue khatam hone tak; restart ke baad resume (SQLite)
+- Bot me live status: `/status` (buttons), `/live` (auto-update)
+- `/pause` `/resume` `/failed` `/retry` `/export` `/delay` `/clear` `/login` `/logout`
+- Failed link ka turant notification (reason ke saath), end me summary, 25+ failed ho to file
+- FloodWait auto-handle (exact wait + delay adaptive), account limit pe auto-pause + alert
+- Public/private/join-request links, duplicates skip, already-joined detect
+- Sirf owner control kar sakta hai
 
-## Notifications
-- Start, har `PROGRESS_EVERY` joins pe progress, end me summary
-- Har failed link turant (reason ke saath) — `NOTIFY_EACH_FAIL=0` se sirf end summary
-- FloodWait, account limit, session problem pe alert
-
-## Zaroori baatein
-- **Limit:** ek account me normally ~500 channels/groups, Premium me ~1000. Limit aate hi bot pause
-  hokar notify karta hai (pending links safe rehte hain). 800+ ke liye Premium ya 2nd account chahiye.
-- **Speed:** default 3–6s per join. Telegram khud joins rate-limit karta hai; FloodWait aaye to bot
-  exact utna ruk ke apne aap continue karta hai aur delay thoda badha deta hai. Delay bahut kam
-  karoge to FloodWait/ban risk badhta hai.
-- Join request wale channels me "request sent" count hota hai (admin approve kare tab join).
+## Zaroori
+- Limit: normal account ~500 channels/groups, Premium ~1000.
+- Speed Telegram limit se tay hoti hai; delay bahut kam karoge to FloodWait/ban risk.
+- Volume nahi lagaya to redeploy ke baad `/login` dobara + queue reset hogi.
 
 ## Test
-`python tests/test_logic.py` (logic test, fake Telegram client ke saath).
+`python tests/test_logic.py` aur `python tests/test_app.py` (fake Telegram client).

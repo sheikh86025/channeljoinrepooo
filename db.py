@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS links (
     added REAL, updated REAL,
     UNIQUE(kind, key)
 );
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 CREATE INDEX IF NOT EXISTS idx_status ON links(status, id);
 """
 
@@ -78,6 +79,24 @@ class DB:
                            (time.time(),)).rowcount
         self.c.commit()
         return n
+
+    def get(self, key, default=None):
+        r = self.c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        return r["value"] if r else default
+
+    def set(self, key, value):
+        self.c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+        self.c.commit()
+
+    def delete(self, key):
+        self.c.execute("DELETE FROM settings WHERE key=?", (key,))
+        self.c.commit()
+
+    def rows_by_status(self, status):
+        return self.c.execute("SELECT * FROM links WHERE status=? ORDER BY id", (status,)).fetchall()
+
+    def count_since(self, status, ts):
+        return self.c.execute("SELECT COUNT(*) n FROM links WHERE status=? AND updated>=?", (status, ts)).fetchone()["n"]
 
     def clear_finished(self):
         n = self.c.execute("DELETE FROM links WHERE status!='pending'").rowcount

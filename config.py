@@ -23,6 +23,8 @@ class Config:
     api_id: int = 0
     api_hash: str = ""
     session_string: str = ""
+    bot_token: str = ""
+    owner_id: int = 0
     db_path: str = "data/joiner.db"
     delay_min: float = 3.0
     delay_max: float = 6.0
@@ -33,12 +35,18 @@ class Config:
     idle_wait: float = 30.0   # worker idle me kitni der me ek baar jaagta hai
     max_delay_factor: float = 6.0
 
+    @property
+    def data_dir(self):
+        return os.path.dirname(self.db_path) or "."
+
     @classmethod
     def from_env(cls):
         return cls(
             api_id=_int("API_ID", 0),
             api_hash=os.getenv("API_HASH", "").strip(),
-            session_string=os.getenv("SESSION_STRING", "").strip(),
+            bot_token=os.getenv("BOT_TOKEN", "").strip(),
+            owner_id=_int("OWNER_ID", 0),
+            session_string="".join(os.getenv("SESSION_STRING", "").split()).strip("\"'"),
             db_path=os.getenv("DB_PATH", "data/joiner.db").strip(),
             delay_min=_float("JOIN_DELAY_MIN", 3),
             delay_max=_float("JOIN_DELAY_MAX", 6),
@@ -50,7 +58,7 @@ class Config:
 
     def validate(self):
         missing = [n for n, v in (("API_ID", self.api_id), ("API_HASH", self.api_hash),
-                                  ("SESSION_STRING", self.session_string)) if not v]
+                                  ("BOT_TOKEN", self.bot_token)) if not v]
         if missing:
             raise SystemExit("Missing env vars: " + ", ".join(missing))
         if self.delay_max < self.delay_min:

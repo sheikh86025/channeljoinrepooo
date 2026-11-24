@@ -4,5 +4,6 @@ class FloodWaitError(RPCError):
 for _n in ["UserAlreadyParticipantError","InviteRequestSentError","ChannelsTooMuchError","InviteHashExpiredError",
            "InviteHashInvalidError","InviteHashEmptyError","UsernameInvalidError","UsernameNotOccupiedError",
            "ChannelPrivateError","ChannelInvalidError","UserBannedInChannelError","UsersTooMuchError",
-           "ChatInvalidError","RpcCallFailError","SessionRevokedError"]:
+           "ChatInvalidError","RpcCallFailError","SessionRevokedError","SessionPasswordNeededError",
+           "PhoneCodeInvalidError","PhoneCodeExpiredError","PasswordHashInvalidError","PhoneNumberInvalidError","AccessTokenInvalidError"]:
     globals()[_n] = type(_n, (RPCError,), {})

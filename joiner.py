@@ -75,6 +75,8 @@ class Joiner:
         self.flood_until = 0.0
         self.flood_hits = 0
         self._stop = False
+        self.current = ""
+        self.last_joined = ""
 
     # ---------- control ----------
     def wake_up(self):
@@ -136,6 +138,7 @@ class Joiner:
 
     async def process(self, row):
         rid, url = row["id"], row_url(row)
+        self.current = url
         status, detail, title = None, "", ""
         try:
             title = await self._join(row)
@@ -183,6 +186,8 @@ class Joiner:
                 return
 
         self.db.mark(rid, status, detail, title)
+        if status == "joined":
+            self.last_joined = title or url
         await self._record(status, url, detail, title)
 
     async def _flood(self, seconds):
@@ -269,5 +274,7 @@ class Joiner:
                 f"☑️ Already: {c['already']}\n"
                 f"📨 Request sent: {c['request_sent']}\n"
                 f"❌ Failed: {c['failed']}\n"
+                f"{('Abhi: ' + self.current + chr(10)) if c['pending'] and self.current and not self.paused else ''}"
+                f"{('Last joined: ' + self.last_joined + chr(10)) if self.last_joined else ''}"
                 f"Delay: {self.cfg.delay_min:g}-{self.cfg.delay_max:g}s x{self.delay_factor:.1f} | "
                 f"FloodWaits: {self.flood_hits}{eta}")
