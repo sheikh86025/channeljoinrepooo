@@ -1,85 +1,142 @@
-# Telegram Bulk Channel Joiner
+# 🚀 Fast Channel Joiner (Telegram UserBot)
 
-Ek baar mein 500-600 channel links bhejo, bot khud sabko ek-ek karke join karta hai.
-FloodWait par auto-wait + auto-resume, SQLite mein progress save, `/stats` aur final report.
+Ek userbot jo aapke diye hue 500–600 channel links ko **ek-ek karke automatically join** karta hai.
+Control ek normal Telegram bot se hota hai (links bhejo, `/stats` dekho, report pao).
 
-> Channel join karna sirf **user account** se hota hai (bot token se nahi), isliye ye Telethon userbot hai.
-> Apna hi account use karo aur Telegram ke rules follow karo.
+## Features
+
+- **Bulk links:** message, forwarded post (hidden hyperlinks aur buttons ke links bhi), ya `.txt` file — sab se links apne aap nikalta hai
+- **Links dobara bhejne ki zarurat nahi:** sab SQLite me save hote hain
+- **Maximum safe speed:** ek join khatam hote hi agla; gap chhota (default 2s → 1s tak) aur FloodWait aane par khud adjust
+- **FloodWait auto-recovery:** Telegram jitne second bole utna wait, phir khud resume. Restart ho jaye tab bhi bacha hua wait yaad rehta hai
+- **Har link ka alag result:** Joined / Already Joined / Invalid / Expired-Private / Not Found / Join Request Sent / Other Error
+- **Invalid link se process nahi rukta**
+- **Duplicate links:** dobara bhejne par bot batata hai "already join ho chuka" ya "queue me hai"; process nahi hota
+- **`/stats`:** live progress, FloodWait status
+- **Final report:** queue khatam hote hi apne aap; lambi list ho to TXT file
+- **Channel limit (500 / Premium 1000):** limit full hote hi bot "cleanup karo" bolta hai, aap leave karo, bot khud resume karta hai
+
+## Files (sab ek hi folder me, koi subfolder nahi)
+
+| File | Kaam |
+|---|---|
+| `main.py` | entry point |
+| `config.py` | env settings |
+| `database.py` | SQLite (progress, resume) |
+| `links.py` | message se links nikalna |
+| `worker.py` | join loop, FloodWait, limit, final report |
+| `telegram_ops.py` | Telethon se asli join |
+| `handlers.py` | bot commands / links intake |
+| `reports.py` | `/stats` aur report text |
+| `gen_session.py` | SESSION_STRING banane ke liye (ek baar) |
+| `test_joiner.py` | tests |
+| `requirements.txt`, `railway.json` | deploy files |
+
+## GitHub par daalna
+
+1. github.com → **New repository** (Private rakho) → naam do → Create
+2. **"uploading an existing file"** link par tap karo
+3. Saari files ek saath select karke upload karo (file picker me multi-select hota hai) → **Commit changes**
+4. Dhyan: `SESSION_STRING` ya `BOT_TOKEN` kisi file me mat likhna — ye sirf Railway Variables me jayenge
 
 ## Setup
 
+1. **API ID / HASH:** https://my.telegram.org → API development tools
+2. **Bot token:** @BotFather se naya bot banao (ye sirf control panel hai)
+3. **OWNER_ID:** apna Telegram numeric ID (@userinfobot se milta hai). Sirf yahi ID bot use kar sakti hai
+4. **SESSION_STRING:** laptop/PC par ek baar
+
+   ```bash
+   pip install telethon
+   python gen_session.py
+   ```
+   Phone number aur OTP daalo. Jo lambi string aaye wo `SESSION_STRING` hai.
+   ⚠️ Ye string account ka poora access hai — kisi ko mat dena.
+   **Spare account use karna better hai** (mass joining me ban/limit ka risk rehta hai).
+5. Bot ko Telegram me khol kar ek baar **/start** bhejo (warna wo aapko message nahi bhej payega)
+
+## Environment variables
+
+| Name | Zaruri | Default | Matlab |
+|---|---|---|---|
+| `API_ID`, `API_HASH` | ✅ | – | my.telegram.org se |
+| `BOT_TOKEN` | ✅ | – | BotFather ka token |
+| `OWNER_ID` | ✅ | – | aapka Telegram ID |
+| `SESSION_STRING` | ✅ | – | userbot session |
+| `DB_PATH` | | `joiner.db` | SQLite file ka path (Railway par `/data/joiner.db`) |
+| `START_DELAY` | | `2` | shuruaati gap (sec) |
+| `MIN_DELAY` | | `1` | gap isse kam nahi hoga |
+| `MAX_DELAY` | | `30` | FloodWait ke baad gap isse zyada nahi |
+| `MIN_FREE` | | `20` | limit full ke baad itne channels leave hone par auto resume |
+| `REPORT_DEBOUNCE` | | `20` | queue khali hone ke itne sec baad final report |
+
+## Run
+
+**Railway (recommended):**
+1. New Project → Deploy from GitHub repo → apna repo chuno
+2. **Variables** me upar wale env daalo
+3. **Volume** banao, mount path `/data`, aur `DB_PATH=/data/joiner.db` set karo — warna redeploy par progress ud jayegi
+4. Start command `python main.py` (`railway.json` me pehle se hai)
+5. Logs me error na ho aur bot aapko "🟢 Bot chalu" message bheje, to sahi chal raha hai
+
+**Local:**
 ```bash
-python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env     # API_ID / API_HASH daalo (https://my.telegram.org)
-python main.py           # pehli baar phone + OTP maangega, phir session save ho jata hai
+```
+Ek `.env` file banao jisme `API_ID=...`, `API_HASH=...`, `BOT_TOKEN=...`, `OWNER_ID=...`, `SESSION_STRING=...` likho, phir:
+```bash
+python main.py
 ```
 
-Headless server: ek baar local machine par login karke `SESSION_STRING` bana lo, ya server par pehli baar
-terminal se login karo. Uske baad `python main.py` (ya systemd/pm2/screen) restart-safe hai.
+## Use kaise karein
 
-## Use
+1. Bot ko links bhejo. Telegram ek message me ~4000 characters hi deta hai, isliye 500–600 links
+   **kai messages me ya ek `.txt` file me** bhejo (har line me ek link). Forward kiye hue posts bhi chalte hain.
+2. Bot turant batata hai: kitne naye queue me gaye, kitne repeat the.
+3. Joining apne aap shuru. `/stats` se progress dekho.
+4. Sab khatam hone par final report apne aap aayegi.
 
-1. Telegram mein apne **Saved Messages** kholo.
-2. Links paste karo (t.me/+hash, t.me/joinchat/hash, t.me/username, @username). Ek message mein bahut links
-   ho to bhi chalega; Telegram ka 4096-char limit hai (Premium: 4096 bhi), isliye 500-600 links **2-4 messages**
-   mein ya ek **.txt file** mein bhejo. Bot sab messages combine kar leta hai, duplicates skip karta hai.
-3. Bot automatically join shuru kar deta hai. Dobara links bhejne ki zaroorat nahi.
+Links jo pehchane jaate hain: `https://t.me/name`, `t.me/+hash`, `t.me/joinchat/hash`, `tg://join?invite=hash`,
+aur akeli line me `@username`.
 
-(Chaho to `OWNER_ID` set karke us user ke messages bhi accept kara sakte ho.)
-
-## Commands
+### Commands
 
 | Command | Kaam |
 |---|---|
-| `/stats` | Total, Joined, Already, Failed, Invalid, Requests, Pending, Currently Processing, FloodWait, Progress % |
-| `/report` | Report dobara bhejo |
-| `/pause`, `/resume` | Joining roko / chalu karo |
-| `/retry` | Failed (not found / other error) links dobara queue karo |
-| `/delay 1.5` | Base delay badlo |
+| `/stats` | Total, Joined, Already Joined, Failed, Invalid, Join Requests, Pending, Currently Processing, FloodWait status, Progress % |
+| `/pause` | joining rok do |
+| `/resume` | dobara chalu (limit full ke baad cleanup karke bhi) |
+| `/retry` | Other-Error wale links dobara try |
+| `/report` | abhi tak ki report |
 
-## Kaise kaam karta hai
+### Status ka matlab
 
-- **Speed:** ek link khatam hote hi agla start; sirf `JOIN_DELAY` (default 1s) ka chhota gap.
-  FloodWait aane par delay automatic badhta hai (x1.5, max `MAX_DELAY`) aur 10 successful joins ke baad wapas
-  kam hota hai. Isse Telegram ki limit ke andar rehkar maximum safe speed milti hai.
-- **FloodWait:** `FloodWaitError.seconds + 1` sleep, phir *usi* link ko retry. Process kabhi stop nahi hota.
-- **Result categories:** Joined, Already Joined, Invalid Invite Link, Private/Expired, Not Found,
-  Join Request Sent, Other Errors. Invalid/expired link baaki process ko nahi rokta.
-- **SQLite (`data/joiner.db`):** har link ka status save hota hai. Restart par `processing` wale link wapas
-  pending ho jaate hain aur pending links se resume hota hai; joined links dobara process nahi hote.
-- **Final report:** sab links khatam hone par (10s koi naya link nahi aaya to) summary + Failed/Invalid list.
-  List badi ho (20 se zyada) to TXT file; saath mein har link ka CSV bhi aata hai.
-- **Account limit:** Telegram account par joined channels ki limit hoti hai (~500; Premium zyada). Limit aane par
-  bot pause hokar notify karta hai; kuch channels leave karke `/resume` karo.
+| Status | Matlab |
+|---|---|
+| Successfully Joined | join ho gaya |
+| Already Joined | pehle se member tha |
+| Join Request Sent | channel me admin approval chahiye, request bhej di |
+| Invalid Invite Link | link galat hai |
+| Private Channel / Invite Expired | invite expire/revoke ya channel private/banned |
+| Channel Not Found | username exist nahi karta / channel nahi hai |
+| Other Error | koi aur dikkat (reason report me likha hota hai) |
 
-## Important notes
+**Invalid Links** report = Invalid + Expired/Private + Not Found. **Failed** = Other Error.
 
-- Bahut tez joining se account par limitation/ban lag sakta hai. Agar baar-baar badi FloodWait aaye to
-  `JOIN_DELAY` badhao (jaise 3-5s).
-- Public username links ke liye bot pehle check karta hai ki already member hai ya nahi.
+## Dhyan rakhne wali baatein
 
-## Structure
+- **Speed:** Telegram har account par join ki limit lagata hai. Isliye 600 channels kuch minute me nahi honge —
+  bot jitna tez safe hai utna chalta hai, FloodWait aaye to khud ruk kar aage badhta hai. Gap zero karne se
+  FloodWait aur lamba hota hai aur account restrict ho sakta hai.
+- **Channel limit:** free account me 500, Premium me 1000 channels/groups. 600 links ho to limit aayegi:
+  bot batayega, aap kuch channels leave karo (jaise inactive wale), bot khud resume karega.
+- Join-request wale channels me request jati hai; approve hone par hi aap member banoge.
+- Sirf `OWNER_ID` bot ko control kar sakta hai.
 
+## Tests
+
+```bash
+python -m unittest test_joiner -v
 ```
-main.py
-joinbot/  config.py  parser.py  db.py  joiner.py  reports.py  app.py
-tests/    test_core.py
-requirements.txt  .env.example  README.md
-```
-
-Tests: `python -m unittest discover -s tests -v`
-
-
-## Hosted deployment: SESSION_STRING / EOFError
-
-For a hosted server without an interactive terminal, set `SESSION_STRING` to a
-**genuine authenticated Telethon StringSession**. Paste only the session value
-(no surrounding quote characters); never share it publicly. The app connects
-and checks authorization before starting. It will not call `input()` on a
-non-interactive server.
-
-If the StringSession is malformed, the app reports that directly. If it parses
-but is not authorized, generate a fresh authenticated StringSession. If
-`SESSION_STRING` is empty, an already-authorized `SESSION_NAME` session file
-can be used, provided it is stored on persistent storage.
+Tests Telegram ke bina chalte hain (fake Telegram se): link parsing, SQLite resume, sabhi statuses,
+FloodWait recovery, channel limit pause/resume, final report aur TXT file.
