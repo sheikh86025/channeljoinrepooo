@@ -55,6 +55,15 @@ Control ek normal Telegram bot se hota hai (links bhejo, `/stats` dekho, report 
    **Spare account use karna better hai** (mass joining me ban/limit ka risk rehta hai).
 5. Bot ko Telegram me khol kar ek baar **/start** bhejo (warna wo aapko message nahi bhej payega)
 
+## Bina SESSION_STRING ke login (PHONE_NUMBER se)
+
+`SESSION_STRING` ki jagah Railway Variables me bas `PHONE_NUMBER` (jaise `+919876543210`) daalo.
+1. Deploy karo → control bot me message aayega "Login chahiye".
+2. Account me jo code aaye wo bot me bhejo, **digits ke beech space ke saath**: `/otp 1 2 3 4 5`
+3. 2-step password ho to: `/password aapka_password` (bot message delete kar deta hai)
+4. Code nahi aaya to `/resend`
+5. Login ke baad bot nayi `SESSION_STRING` bhejta hai — use Variables me daal do taaki redeploy par dobara OTP na lage.
+
 ## Environment variables
 
 | Name | Zaruri | Default | Matlab |
@@ -62,7 +71,8 @@ Control ek normal Telegram bot se hota hai (links bhejo, `/stats` dekho, report 
 | `API_ID`, `API_HASH` | ✅ | – | my.telegram.org se |
 | `BOT_TOKEN` | ✅ | – | BotFather ka token |
 | `OWNER_ID` | ✅ | – | aapka Telegram ID |
-| `SESSION_STRING` | ✅ | – | userbot session |
+| `SESSION_STRING` | ❌ (agar PHONE_NUMBER diya) | – | userbot session |
+| `PHONE_NUMBER` | ❌ (agar SESSION_STRING diya) | – | +91... number, bot OTP se login karwayega |
 | `DB_PATH` | | `joiner.db` | SQLite file ka path (Railway par `/data/joiner.db`) |
 | `START_DELAY` | | `2` | shuruaati gap (sec) |
 | `MIN_DELAY` | | `1` | gap isse kam nahi hoga |

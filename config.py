@@ -17,6 +17,8 @@ class Config:
     owner_id: int
     session_string: str
     db_path: str = "joiner.db"
+    phone: str = ""               # PHONE_NUMBER variable: bot khud login karwayega (OTP bot me bhejna)
+    session_file: str = "session.txt"  # login ke baad string yahan bhi save hoti hai
     start_delay: float = 2.0      # shuruaati gap (sec) har join ke beech
     min_delay: float = 1.0        # isse kam kabhi nahi hoga
     max_delay: float = 30.0       # FloodWait ke baad gap badhta hai, isse zyada nahi
@@ -50,13 +52,25 @@ def check_session(session):
 
 
 def load_config():
+    phone = os.environ.get("PHONE_NUMBER", "").strip().replace(" ", "")
+    session = clean_session(os.environ.get("SESSION_STRING", ""))
+    if session and session[:1] != "1":
+        if not phone:
+            check_session(session)  # error de do
+        print(f"SESSION_STRING Telethon wali nahi hai (shuruaat: '{session[:2]}') — ignore, PHONE_NUMBER se login hoga.")
+        session = ""
+    if not session and not phone:
+        raise SystemExit("SESSION_STRING ya PHONE_NUMBER me se ek variable zaroor daalo.")
+    db_path = os.environ.get("DB_PATH", "joiner.db")
     return Config(
         api_id=int(_need("API_ID")),
         api_hash=_need("API_HASH"),
         bot_token=_need("BOT_TOKEN"),
         owner_id=int(_need("OWNER_ID")),
-        session_string=check_session(clean_session(_need("SESSION_STRING"))),
-        db_path=os.environ.get("DB_PATH", "joiner.db"),
+        session_string=session,
+        db_path=db_path,
+        phone=phone,
+        session_file=os.environ.get("SESSION_FILE", os.path.join(os.path.dirname(db_path) or ".", "session.txt")),
         start_delay=float(os.environ.get("START_DELAY", 2)),
         min_delay=float(os.environ.get("MIN_DELAY", 1)),
         max_delay=float(os.environ.get("MAX_DELAY", 30)),
