@@ -21,7 +21,17 @@ async def main():
     db = Database(cfg.db_path)
 
     bot = TelegramClient(StringSession(), cfg.api_id, cfg.api_hash, connection_retries=-1)
-    await bot.start(bot_token=cfg.bot_token)
+    for attempt in range(1, 31):  # Telegram ke temporary internal error par retry
+        try:
+            await bot.start(bot_token=cfg.bot_token)
+            break
+        except Exception as e:
+            if type(e).__name__ in ("AccessTokenInvalidError", "AccessTokenExpiredError", "ApiIdInvalidError"):
+                raise SystemExit(f"BOT_TOKEN / API_ID / API_HASH galat hai: {type(e).__name__}")
+            log.warning("bot start fail (%d/30): %s — 10s baad retry", attempt, type(e).__name__)
+            await asyncio.sleep(10)
+    else:
+        raise SystemExit("Bot start nahi ho paya, Telegram abhi issue de raha hai. Thodi der baad redeploy karo.")
 
     async def notify(text):
         try:
