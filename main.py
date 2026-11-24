@@ -1,93 +1,181 @@
 import asyncio
 import io
 import logging
-import os
+import sys
 
-from telethon import TelegramClient
+from telethon import TelegramClient, events
+from telethon import errors as E
 from telethon.sessions import StringSession
 
-from config import load_config
-from database import Database
-from handlers import HELP, register
-from login import login_with_phone
-from telegram_ops import TelegramOps
-from worker import Worker
+from config import BOT_PREFIX, Config
+from db import DB, row_url
+from joiner import Joiner
+from linkparser import extract_links
 
-log = logging.getLogger("joiner")
+logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO)
+log = logging.getLogger("main")
+
+HELP = (
+    "Channel Joiner Userbot\n\n"
+    "Is chat (Saved Messages) me links bhejo (text ya .txt file) — sab queue me jayenge "
+    "aur ek-ek karke join honge.\n\n"
+    "/status — progress\n/pause — roko\n/resume — dobara chalao\n"
+    "/failed — failed links list\n/retry — failed links dobara try\n"
+    "/delay 3 6 — join delay (sec) badlo\n/clear — finished records saaf (pending safe)"
+)
+
+
+class Notifier:
+    def __init__(self, client):
+        self.client = client
+
+    async def _send(self, coro_factory):
+        for _ in range(2):
+            try:
+                await coro_factory()
+                return
+            except E.FloodWaitError as e:
+                if e.seconds > 300:
+                    return
+                await asyncio.sleep(e.seconds + 1)
+            except Exception:
+                log.exception("notify failed")
+                return
+
+    async def text(self, msg):
+        await self._send(lambda: self.client.send_message("me", BOT_PREFIX + msg[:3900], link_preview=False))
+
+    async def file(self, name, data, caption):
+        def make():
+            bio = io.BytesIO(data)
+            bio.name = name
+            return self.client.send_file("me", bio, caption=BOT_PREFIX + caption)
+        await self._send(make)
+
+
+async def connect_with_retry(client):
+    for i in range(10):
+        try:
+            await client.connect()
+            return await client.is_user_authorized()
+        except Exception as e:
+            wait = min(5 * 2 ** i, 120)
+            log.warning("connect failed (%s), retry in %ss", type(e).__name__, wait)
+            await asyncio.sleep(wait)
+    raise SystemExit("Telegram se connect nahi ho paya")
+
+
+async def supervise(joiner):
+    while True:
+        try:
+            await joiner.run()
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("worker crashed, restarting in 5s")
+            await asyncio.sleep(5)
 
 
 async def main():
-    cfg = load_config()
-    db = Database(cfg.db_path)
+    cfg = Config.from_env()
+    cfg.validate()
+    db = DB(cfg.db_path)
+    client = TelegramClient(StringSession(cfg.session_string), cfg.api_id, cfg.api_hash,
+                            flood_sleep_threshold=0, connection_retries=-1,
+                            retry_delay=3, auto_reconnect=True)
+    if not await connect_with_retry(client):
+        raise SystemExit("SESSION_STRING invalid/expired hai. gen_session.py se naya banao.")
 
-    bot = TelegramClient(StringSession(), cfg.api_id, cfg.api_hash, connection_retries=-1)
-    for attempt in range(1, 31):  # Telegram ke temporary internal error par retry
+    notifier = Notifier(client)
+    joiner = Joiner(client, db, cfg, notifier)
+
+    async def command(text):
+        parts = text.split()
+        cmd = parts[0].lower().split("@")[0]
+        if cmd in ("/start", "/help"):
+            await notifier.text(HELP)
+        elif cmd == "/status":
+            await notifier.text(joiner.status_text())
+        elif cmd == "/pause":
+            joiner.pause()
+            await notifier.text("⏸ Pause kar diya. /resume se continue.")
+        elif cmd == "/resume":
+            if joiner.fatal:
+                await notifier.text("Session problem hai, pehle naya SESSION_STRING lagao.")
+            else:
+                joiner.resume()
+                await notifier.text(f"▶️ Resume. Pending: {db.pending_count()}")
+        elif cmd == "/failed":
+            rows = db.failed_rows()
+            if not rows:
+                await notifier.text("Koi failed link nahi 🎉")
+            else:
+                body = "\n".join(f"{row_url(r)} — {r['detail']}" for r in rows)
+                if len(rows) <= 25:
+                    await notifier.text(f"❌ Failed ({len(rows)}):\n{body}")
+                else:
+                    await notifier.file("failed_links.txt", body.encode(), f"Failed ({len(rows)})")
+        elif cmd == "/retry":
+            n = db.requeue_failed()
+            joiner.wake_up()
+            await notifier.text(f"🔁 {n} failed links dobara queue me daale")
+        elif cmd == "/clear":
+            n = db.clear_finished()
+            await notifier.text(f"🧹 {n} finished records hata diye. Pending safe hain.")
+        elif cmd == "/delay":
+            try:
+                lo = float(parts[1])
+                hi = float(parts[2]) if len(parts) > 2 else lo
+                if lo < 0 or hi < lo:
+                    raise ValueError
+                cfg.delay_min, cfg.delay_max = lo, hi
+                await notifier.text(f"Delay ab {lo:g}-{hi:g}s")
+            except (IndexError, ValueError):
+                await notifier.text("Use: /delay 3 6")
+        else:
+            await notifier.text("Command samajh nahi aaya. /help dekho.")
+
+    @client.on(events.NewMessage(chats="me"))
+    async def on_message(event):
         try:
-            await bot.start(bot_token=cfg.bot_token)
-            break
-        except Exception as e:
-            if type(e).__name__ in ("AccessTokenInvalidError", "AccessTokenExpiredError", "ApiIdInvalidError"):
-                raise SystemExit(f"BOT_TOKEN / API_ID / API_HASH galat hai: {type(e).__name__}")
-            log.warning("bot start fail (%d/30): %s — 10s baad retry", attempt, type(e).__name__)
-            await asyncio.sleep(10)
-    else:
-        raise SystemExit("Bot start nahi ho paya, Telegram abhi issue de raha hai. Thodi der baad redeploy karo.")
+            msg = event.message
+            text = (msg.message or "").strip()
+            if text.startswith(BOT_PREFIX.strip()):
+                return
+            if text.startswith("/"):
+                await command(text)
+                return
+            f = msg.file
+            if f is not None:
+                name = (getattr(f, "name", "") or "").lower()
+                mime = getattr(f, "mime_type", "") or ""
+                size = getattr(f, "size", 0) or 0
+                if (name.endswith((".txt", ".csv")) or mime.startswith("text/")) and size <= 5_000_000:
+                    data = await msg.download_media(file=bytes)
+                    text += "\n" + data.decode("utf-8", "ignore")
+            items = extract_links(text)
+            if not items:
+                return
+            new, req, dup = db.add_links(items)
+            await notifier.text(f"📥 {new} naye links queue me | {req} failed wale dobara | {dup} duplicate skip\n"
+                                f"Pending: {db.pending_count()}")
+            joiner.wake_up()
+        except Exception:
+            log.exception("handler error")
 
-    async def notify(text):
-        try:
-            await bot.send_message(cfg.owner_id, text, parse_mode=None, link_preview=False)
-        except Exception as e:
-            log.warning("notify fail (bot ko /start kiya?): %s", type(e).__name__)
-
-    def new_user(session):
-        # flood_sleep_threshold=0: FloodWait Telethon khud sleep na kare, hum handle karenge (stats me dikhega)
-        return TelegramClient(StringSession(session), cfg.api_id, cfg.api_hash,
-                              flood_sleep_threshold=0, connection_retries=-1)
-
-    # pehle SESSION_STRING, phir login ke baad bani session file, phir PHONE_NUMBER se naya login
-    candidates = [cfg.session_string]
-    if os.path.exists(cfg.session_file):
-        candidates.append(open(cfg.session_file).read().strip())
-    user = None
-    for s in candidates:
-        if not s or s[:1] != "1":
-            continue
-        try:
-            c = new_user(s)
-            await c.connect()
-            if await c.is_user_authorized():
-                user = c
-                break
-            await c.disconnect()
-        except Exception as e:
-            log.warning("session try fail: %s", type(e).__name__)
-    if user is None:
-        if not cfg.phone:
-            raise SystemExit("SESSION_STRING invalid/expired — PHONE_NUMBER variable daalo (bot login karwa dega).")
-        user = new_user("")
-        await user.connect()
-        await login_with_phone(bot, user, cfg, notify)
-
-    async def send_report(text, files):
-        try:
-            await bot.send_message(cfg.owner_id, text, parse_mode=None, link_preview=False)
-            for name, data in files:
-                buf = io.BytesIO(data)
-                buf.name = name
-                await bot.send_file(cfg.owner_id, buf, caption=name, force_document=True)
-            return True
-        except Exception as e:
-            log.warning("report send fail: %s", type(e).__name__)
-            return False
-
-    worker = Worker(cfg, db, TelegramOps(user), notify, send_report)
-    register(bot, cfg, db, worker)
-
-    await notify(f"🟢 Bot chalu. Pending links: {db.pending_count()}\n\n{HELP}")
-    await asyncio.gather(worker.run(), bot.run_until_disconnected())
+    pending = db.pending_count()
+    await notifier.text(f"✅ Userbot online. /help dekho." + (f"\nPending {pending} links se resume kar raha hoon." if pending else ""))
+    worker = asyncio.create_task(supervise(joiner))
+    try:
+        await client.run_until_disconnected()
+    finally:
+        joiner.stop()
+        worker.cancel()
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        sys.exit(0)
