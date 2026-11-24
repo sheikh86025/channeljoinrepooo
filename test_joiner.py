@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import Config
+from config import Config, check_session, clean_session
 from database import Database
 from handlers import handle_links_text, run_command
 from links import collect_text, extract_links
@@ -139,6 +139,21 @@ class ParserTests(unittest.TestCase):
 
         links, _ = extract_links(collect_text(Msg()))
         self.assertEqual({v for _, v, _, _ in links}, {"HiddenHash1", "button_chan"})
+
+
+class ConfigTests(unittest.TestCase):
+    def test_clean_session(self):
+        good = "1BVtsOHcBu" + "A" * 340 + "="
+        for raw in [good, f'"{good}"', f"'{good}'", f"  {good}\n", f"SESSION_STRING={good}",
+                    good[:100] + "\n" + good[100:]]:
+            self.assertEqual(clean_session(raw), good)
+        self.assertEqual(check_session(good), good)
+
+    def test_non_telethon_string_rejected_with_clear_message(self):
+        with self.assertRaises(SystemExit) as ctx:
+            check_session("BQAbCdEfPyrogramStyleString")
+        self.assertIn("Telethon wali nahi", str(ctx.exception))
+        self.assertIn("'BQ'", str(ctx.exception))
 
 
 class DbTests(unittest.TestCase):
